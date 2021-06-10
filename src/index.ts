@@ -17,7 +17,8 @@ createConfigObserver({
             options: {
               service: "grain",
               ServiceIcon: GrainLogo,
-              getPopoutUrl: () => Promise.resolve(`https://grain.co`),
+              getPopoutUrl: () =>
+                Promise.resolve(`https://roamjs.com/oauth?mock=Grain`),
               getAuthData: (data) => Promise.resolve(JSON.parse(data)),
             },
           },
