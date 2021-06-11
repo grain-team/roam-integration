@@ -97,7 +97,7 @@ const GrainFeed = ({ parentUid, date }: Props): React.ReactElement => {
       parentUid,
       order: getChildrenLengthByPageUid(parentUid),
       node: {
-        text: "#[[Grain Feed]]",
+        text: "#[[Grain Import]]",
         children: [
           {
             text: "Cancelled",
