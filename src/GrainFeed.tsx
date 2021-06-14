@@ -114,6 +114,7 @@ const GrainFeed = ({ parentUid, date }: Props): React.ReactElement => {
       setError(
         "Need to log in with Grain to use Daily Grain Import! Head to roam/js/grain page to log in."
       );
+      setLoading(false);
       return;
     }
     // const { code } = JSON.parse(oauth);
