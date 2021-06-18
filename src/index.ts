@@ -1,16 +1,40 @@
 import {
+  addStyle,
+  createBlock,
+  createBlockObserver,
+  createIconButton,
   createPageTitleObserver,
+  deleteBlock,
   getLinkedPageTitlesUnderUid,
   getPageUidByPageTitle,
   getShallowTreeByParentUid,
+  getUids,
   toConfig,
   toRoamDate,
   toRoamDateUid,
 } from "roam-client";
 import { createConfigObserver, toFlexRegex } from "roamjs-components";
 import GrainLogo from "./assets/grain.svg";
-import { getRecordings, outputRecordings, render } from "./GrainFeed";
-import { IMPORT_LABEL } from "./util";
+import {
+  fetchEachRecording,
+  getRecordings,
+  outputRecordings,
+  render,
+} from "./GrainFeed";
+import { render as renderLoadingAlert } from "./LoadingAlert";
+import { IMPORT_LABEL, mockApi, mockHighlights, mockRecordings } from "./util";
+
+addStyle(`.grain-loading-alert .bp3-alert-footer {
+  display: none;
+}
+
+.grain-loading-alert .bp3-alert-contents {
+  margin:auto;
+}
+
+.grain-loading-alert.bp3-alert {
+  max-width: fit-content;
+}`);
 
 const CONFIG = toConfig("grain");
 createConfigObserver({
@@ -81,4 +105,45 @@ createPageTitleObserver({
       }
     }
   },
+});
+
+createBlockObserver((b: HTMLDivElement) => {
+  if (!b.hasAttribute("data-grain-refresh-import")) {
+    const isImport = Array.from(
+      b.getElementsByClassName("rm-page-ref--tag")
+    ).some((r) => r.getAttribute("data-tag") === IMPORT_LABEL);
+    if (isImport) {
+      b.setAttribute("data-grain-refresh-import", "true");
+      const updateButton = createIconButton("refresh");
+      updateButton.style.float = "right";
+      updateButton.onmousedown = (e) => e.stopPropagation();
+      updateButton.onclick = () => {
+        const { blockUid } = getUids(b);
+        const recordings = window.roamAlphaAPI
+          .q(
+            `[:find ?t ?o ?u :where [?p :node/title ?t] [?c :block/uid ?u] [?c :block/order ?o] [?c :block/refs ?p] [?b :block/children ?c] [?b :block/uid "${blockUid}"]]`
+          )
+          .sort(([_, a], [__, b]) => a - b)
+          .map((b) => ({ text: b[0] as string, uid: b[2] as string }));
+        renderLoadingAlert({
+          operation: () => {
+            getShallowTreeByParentUid(blockUid).forEach(({ uid }) =>
+              deleteBlock(uid)
+            );
+            return fetchEachRecording(
+              recordings.map((r) => {
+                deleteBlock(r.uid);
+                return mockRecordings.find((mr) => mr.title === r.text);
+              })
+            ).then((rs) => {
+              rs.forEach((node, order) =>
+                createBlock({ node, order, parentUid: blockUid })
+              );
+            });
+          },
+        });
+      };
+      b.appendChild(updateButton);
+    }
+  }
 });
