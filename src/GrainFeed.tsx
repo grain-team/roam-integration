@@ -72,7 +72,7 @@ export const fetchEachRecording = (recordings: Omit<Recording, "checked">[]) =>
       text: `[[${r.title}]]`,
       children: r.highlights.map((h) => ({
         text: `${offsetToTimestamp(h.timestamp)} - ${h.text}`,
-        children: h.url ? [{ text: `{{[[video]](${h.url})}}` }] : [],
+        children: h.url ? [{ text: `{{[[video]]:${h.url}}}` }] : [],
       })),
     }))
   );
@@ -195,9 +195,13 @@ const GrainFeed = ({ parentUid }: Props): React.ReactElement => {
             style={{ justifyContent: "space-between", alignItems: "baseline" }}
           >
             <Checkbox
+              disabled={loading}
               label={"Check All"}
               style={{ marginBottom: 0 }}
-              checked={recordings.every(({ checked }) => checked)}
+              checked={
+                !!recordings.length &&
+                recordings.every(({ checked }) => checked)
+              }
               onChange={(e) =>
                 setRecordings(
                   recordings.map((r) => ({

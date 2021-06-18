@@ -33,7 +33,7 @@ export const mockHighlights = {
     {
       text: "I could take notes during???",
       timestamp: 6432,
-      url: "https://media.grain.co/clips/v1/32e58c59-1b50-4af9-a202-5d094056aa09/Mfv9oF0QBdkMTGsM2f2Dy2JaW8Tp051u.mp4?response-content-disposition=attachment%3B+filename%3D%22Grain+Highlight+i2Y06dS7A4ApeNSJo50Yq71C8NWWakbM8mi1Fleo.mp4%22&response-content-type=video%2Fmp4",
+      url: "https://grain.co/highlight/i2Y06dS7A4ApeNSJo50Yq71C8NWWakbM8mi1Fleo",
     },
     {
       text: "👍",
