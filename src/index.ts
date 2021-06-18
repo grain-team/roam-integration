@@ -1,16 +1,16 @@
 import {
-  addOldRoamJSDependency,
   createPageTitleObserver,
   getLinkedPageTitlesUnderUid,
+  getPageUidByPageTitle,
+  getShallowTreeByParentUid,
   toConfig,
   toRoamDate,
   toRoamDateUid,
 } from "roam-client";
-import { createConfigObserver } from "roamjs-components";
+import { createConfigObserver, toFlexRegex } from "roamjs-components";
 import GrainLogo from "./assets/grain.svg";
-import { render } from "./GrainFeed";
-
-addOldRoamJSDependency("video");
+import { getRecordings, outputRecordings, render } from "./GrainFeed";
+import { IMPORT_LABEL } from "./util";
 
 const CONFIG = toConfig("grain");
 createConfigObserver({
@@ -34,6 +34,17 @@ createConfigObserver({
           },
         ],
       },
+      {
+        id: "import",
+        fields: [
+          {
+            title: "auto import",
+            type: "flag",
+            description:
+              "Automatically import recordings each day instead of showing an import dialog",
+          },
+        ],
+      },
     ],
   },
 });
@@ -46,14 +57,28 @@ createPageTitleObserver({
   log: true,
   callback: (d: HTMLDivElement) => {
     const tags = new Set(getLinkedPageTitlesUnderUid(parentUid));
-    if (!tags.has("Grain Import")) {
-      const parent = document.createElement("div");
-      parent.id = "roamjs-grain-feed";
-      d.firstElementChild.insertBefore(
-        parent,
-        d.firstElementChild.firstElementChild.nextElementSibling
-      );
-      render(parent, { parentUid, date: today });
+    if (!tags.has(IMPORT_LABEL)) {
+      const importTree = getShallowTreeByParentUid(
+        getPageUidByPageTitle(CONFIG)
+      ).find((t) => toFlexRegex("import").test(t.text));
+      if (
+        importTree?.uid &&
+        getShallowTreeByParentUid(importTree?.uid).some((t) =>
+          toFlexRegex("auto import").test(t.text)
+        )
+      ) {
+        getRecordings().then((r) =>
+          outputRecordings(r.data.recordings, parentUid)
+        );
+      } else {
+        const parent = document.createElement("div");
+        parent.id = "roamjs-grain-feed";
+        d.firstElementChild.insertBefore(
+          parent,
+          d.firstElementChild.firstElementChild.nextElementSibling
+        );
+        render(parent, { parentUid });
+      }
     }
   },
 });
