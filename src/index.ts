@@ -22,7 +22,9 @@ import {
   render,
 } from "./GrainFeed";
 import { render as renderLoadingAlert } from "./LoadingAlert";
-import { IMPORT_LABEL, mockApi, mockHighlights, mockRecordings } from "./util";
+import { IMPORT_LABEL, mockRecordings } from "./util";
+import axios from "axios";
+import pkceChallenge from "pkce-challenge";
 
 addStyle(`.grain-loading-alert .bp3-alert-footer {
   display: none;
@@ -36,6 +38,12 @@ addStyle(`.grain-loading-alert .bp3-alert-footer {
   max-width: fit-content;
 }`);
 
+const codeVerifierRef = { current: "" };
+const generateCodeVerifier = () => {
+  const { code_verifier, code_challenge } = pkceChallenge();
+  codeVerifierRef.current = code_verifier;
+  return code_challenge;
+};
 const CONFIG = toConfig("grain");
 createConfigObserver({
   title: CONFIG,
@@ -52,8 +60,42 @@ createConfigObserver({
               service: "grain",
               ServiceIcon: GrainLogo,
               getPopoutUrl: () =>
-                Promise.resolve(`https://roamjs.com/oauth?mock=Grain`),
-              getAuthData: (data) => Promise.resolve(JSON.parse(data)),
+                Promise.resolve(
+                  `https://grain.co/_/public-api/oauth2/authorize?client_id=${
+                    process.env.GRAIN_CLIENT_ID
+                  }&response_type=code&code_challenge=${generateCodeVerifier()}&code_challenge_method=S256&redirect_uri=${encodeURIComponent(
+                    "https://roamjs.com/oauth?auth=true"
+                  )}`
+                ),
+              getAuthData: (data) => {
+                const body = {
+                  grant_type: "authorization_code",
+                  client_id: process.env.GRAIN_CLIENT_ID,
+                  code: JSON.parse(data).code,
+                  code_verifier: codeVerifierRef.current,
+                };
+                const formData = new FormData();
+                Object.entries(body).forEach((e) => formData.append(...e));
+                return axios
+                  .post(
+                    "https://grain.co/_/public-api/oauth2/token",
+                    formData,
+                    {
+                      headers: {
+                        "Content-Type": "multipart/form-data",
+                      },
+                    }
+                  )
+                  .then((r) =>
+                    axios
+                      .get("https://grain.co/_/public-api/me", {
+                        headers: {
+                          Authorization: `Bearer ${r.data.access_token}`,
+                        },
+                      })
+                      .then((me) => ({ ...r.data, label: me.data.name }))
+                  );
+              },
             },
           },
         ],
