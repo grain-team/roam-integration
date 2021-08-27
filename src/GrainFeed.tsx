@@ -8,9 +8,23 @@ import {
 } from "@blueprintjs/core";
 import React, { useCallback, useEffect, useState } from "react";
 import ReactDOM from "react-dom";
-import { createBlock, getChildrenLengthByPageUid } from "roam-client";
-import { getOauth } from "roamjs-components";
-import { IMPORT_LABEL, mockApi, mockHighlights, mockRecordings } from "./util";
+import {
+  createBlock,
+  getBasicTreeByParentUid,
+  getChildrenLengthByPageUid,
+  getPageUidByPageTitle,
+  InputTextNode,
+} from "roam-client";
+import { createOverlayRender, getOauth, toFlexRegex } from "roamjs-components";
+import {
+  CONFIG,
+  getIdsImported,
+  getIdsImportedNode,
+  getImportNode,
+  getImportTree,
+  IMPORT_LABEL,
+} from "./util";
+import axios from "axios";
 
 const offsetToTimestamp = (offset?: number) => {
   if (!offset) {
@@ -25,7 +39,10 @@ const offsetToTimestamp = (offset?: number) => {
 type Recording = {
   id: string;
   title: string;
-  thumbnail: string;
+  url: string;
+  end_datetime: string;
+  start_datetime: string;
+  thumbnail_url: string;
   checked: boolean;
 };
 
@@ -33,9 +50,7 @@ type Props = {
   parentUid: string;
 };
 
-export const getRecordings = () => {
-  // const { code } = JSON.parse(oauth);
-  // Trigger GET Call on Grain
+const getAccessToken = () => {
   const oauth = getOauth("grain");
   if (oauth === "{}") {
     return Promise.reject(
@@ -44,44 +59,57 @@ export const getRecordings = () => {
       )
     );
   }
-  return mockApi({
-    recordings: mockRecordings,
+  const { access_token } = JSON.parse(oauth);
+  return Promise.resolve({
+    headers: {
+      Authorization: `Bearer ${access_token}`,
+    },
   });
-  /*axios
-      .get<{ recordings: Omit<Recording, "checked">[] }>(
-        `${process.env.REST_API_URL}/grain-recordings}`,
-        {
-          headers: {
-            Authorization: code,
-          },
-        }
-      )*/
 };
 
-export const fetchEachRecording = (recordings: Omit<Recording, "checked">[]) =>
-  Promise.all(
-    recordings.map((r) =>
-      mockApi({
-        id: r.id,
-        title: r.title,
-        highlights: mockHighlights[r.id] || [],
-      }).then((r) => r.data)
+export const getRecordings = () =>
+  getAccessToken().then((opts) =>
+    axios.get<{ recordings: Omit<Recording, "checked">[] }>(
+      `https://grain.co/_/public-api/recordings`,
+      opts
     )
-  ).then((recordings) =>
-    recordings.map((r) => ({
-      text: `[[${r.title}]]`,
-      children: r.highlights.map((h) => ({
-        text: `${offsetToTimestamp(h.timestamp)} - ${h.text}`,
-        children: h.url ? [{ text: `{{[[video]]:${h.url}}}` }] : [],
-      })),
-    }))
   );
 
-export const outputRecordings = (
-  recordings: Omit<Recording, "checked">[],
-  parentUid: string
-) =>
-  fetchEachRecording(recordings).then((rs) =>
+export const fetchEachRecording = (
+  ids: string[]
+): Promise<(InputTextNode & { id: string })[]> =>
+  getAccessToken()
+    .then((opts) =>
+      Promise.all(
+        ids.map((id) =>
+          axios
+            .get<Recording>(
+              `https://grain.co/_/public-api/recordings/${id}`,
+              opts
+            )
+            .then((r) => r.data)
+        )
+      )
+    )
+    .then((recordings) =>
+      recordings.map((r) => ({
+        uid: window.roamAlphaAPI.util.generateUID(),
+        text: `[[${r.title}]]`,
+        children: [
+          {
+            text: "highlights",
+            children: /*r.highlights*/ [].map((h) => ({
+              text: `${offsetToTimestamp(h.timestamp)} - ${h.text}`,
+              children: h.url ? [{ text: `{{[[video]]:${h.url}}}` }] : [],
+            })),
+          },
+        ],
+        id: r.id,
+      }))
+    );
+
+export const outputRecordings = (ids: string[], parentUid: string) =>
+  fetchEachRecording(ids).then((rs) => {
     createBlock({
       parentUid,
       order: getChildrenLengthByPageUid(parentUid),
@@ -89,18 +117,30 @@ export const outputRecordings = (
         text: `#[[${IMPORT_LABEL}]]`,
         children: rs,
       },
-    })
-  );
+    });
+    const importNode = getImportNode();
+    const idUid =
+      getIdsImportedNode(getImportTree(importNode))?.uid ||
+      createBlock({
+        node: { text: "ids" },
+        parentUid: importNode?.uid,
+        order: 1,
+      });
+    rs.forEach(({ uid, id }) =>
+      createBlock({
+        node: { text: uid, children: [{ text: id }] },
+        parentUid: idUid,
+      })
+    );
+  });
 
-const GrainFeed = ({ parentUid }: Props): React.ReactElement => {
+const GrainFeed = ({
+  parentUid,
+  onClose,
+}: Props & { onClose: () => void }): React.ReactElement => {
   const [recordings, setRecordings] = useState<Recording[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const onClose = useCallback(() => {
-    ReactDOM.unmountComponentAtNode(
-      document.getElementById("roamjs-grain-feed")
-    );
-  }, []);
   const onCancel = useCallback(() => {
     createBlock({
       parentUid,
@@ -128,7 +168,7 @@ const GrainFeed = ({ parentUid }: Props): React.ReactElement => {
   const onClick = useCallback(() => {
     setLoading(true);
     outputRecordings(
-      recordings.filter((r) => r.checked),
+      recordings.filter((r) => r.checked).map((r) => r.id),
       parentUid
     ).finally(onClose);
   }, [recordings, onClose, parentUid]);
@@ -181,7 +221,7 @@ const GrainFeed = ({ parentUid }: Props): React.ReactElement => {
                     }}
                   >
                     <span>{recording.title}</span>
-                    <img src={recording.thumbnail} style={{ height: 24 }} />
+                    <img src={recording.thumbnail_url} style={{ height: 24 }} />
                   </div>
                 </Checkbox>
               ))}
@@ -226,7 +266,6 @@ const GrainFeed = ({ parentUid }: Props): React.ReactElement => {
   );
 };
 
-export const render = (parent: HTMLDivElement, props: Props): void =>
-  ReactDOM.render(<GrainFeed {...props} />, parent);
+export const render = createOverlayRender<Props>("grain-feed", GrainFeed);
 
 export default GrainFeed;

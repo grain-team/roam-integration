@@ -5,6 +5,8 @@ import {
   createIconButton,
   createPageTitleObserver,
   deleteBlock,
+  getBasicTreeByParentUid,
+  getCurrentPageUid,
   getLinkedPageTitlesUnderUid,
   getPageUidByPageTitle,
   getShallowTreeByParentUid,
@@ -22,7 +24,7 @@ import {
   render,
 } from "./GrainFeed";
 import { render as renderLoadingAlert } from "./LoadingAlert";
-import { IMPORT_LABEL, mockRecordings } from "./util";
+import { CONFIG, getIdsImported, IMPORT_LABEL, getImportTree } from "./util";
 import axios from "axios";
 import pkceChallenge from "pkce-challenge";
 
@@ -44,7 +46,6 @@ const generateCodeVerifier = () => {
   codeVerifierRef.current = code_verifier;
   return code_challenge;
 };
-const CONFIG = toConfig("grain");
 createConfigObserver({
   title: CONFIG,
   config: {
@@ -121,29 +122,21 @@ const parentUid = toRoamDateUid(today);
 createPageTitleObserver({
   title,
   log: true,
-  callback: (d: HTMLDivElement) => {
+  callback: () => {
     const tags = new Set(getLinkedPageTitlesUnderUid(parentUid));
     if (!tags.has(IMPORT_LABEL)) {
-      const importTree = getShallowTreeByParentUid(
-        getPageUidByPageTitle(CONFIG)
-      ).find((t) => toFlexRegex("import").test(t.text));
-      if (
-        importTree?.uid &&
-        getShallowTreeByParentUid(importTree?.uid).some((t) =>
-          toFlexRegex("auto import").test(t.text)
-        )
-      ) {
+      const importTree = getImportTree();
+      if (importTree.some((t) => toFlexRegex("auto import").test(t.text))) {
+        const idsImported = getIdsImported();
+        const ids = new Set(Object.values(idsImported));
         getRecordings().then((r) =>
-          outputRecordings(r.data.recordings, parentUid)
+          outputRecordings(
+            r.data.recordings.map((i) => i.id).filter((id) => !ids.has(id)),
+            parentUid
+          )
         );
       } else {
-        const parent = document.createElement("div");
-        parent.id = "roamjs-grain-feed";
-        d.firstElementChild.insertBefore(
-          parent,
-          d.firstElementChild.firstElementChild.nextElementSibling
-        );
-        render(parent, { parentUid });
+        render({ parentUid });
       }
     }
   },
@@ -161,22 +154,17 @@ createBlockObserver((b: HTMLDivElement) => {
       updateButton.onmousedown = (e) => e.stopPropagation();
       updateButton.onclick = () => {
         const { blockUid } = getUids(b);
-        const recordings = window.roamAlphaAPI
-          .q(
-            `[:find ?t ?o ?u :where [?p :node/title ?t] [?c :block/uid ?u] [?c :block/order ?o] [?c :block/refs ?p] [?b :block/children ?c] [?b :block/uid "${blockUid}"]]`
-          )
-          .sort(([_, a], [__, b]) => a - b)
-          .map((b) => ({ text: b[0] as string, uid: b[2] as string }));
         renderLoadingAlert({
           operation: () => {
-            getShallowTreeByParentUid(blockUid).forEach(({ uid }) =>
-              deleteBlock(uid)
-            );
+            const recordings = getBasicTreeByParentUid(blockUid);
+            const idsImported = getIdsImported();
             return fetchEachRecording(
-              recordings.map((r) => {
-                deleteBlock(r.uid);
-                return mockRecordings.find((mr) => mr.title === r.text);
-              })
+              recordings
+                .filter((r) => !!idsImported[r.uid])
+                .map((r) => {
+                  deleteBlock(r.uid);
+                  return idsImported[r.uid];
+                })
             ).then((rs) => {
               rs.forEach((node, order) =>
                 createBlock({ node, order, parentUid: blockUid })
@@ -188,4 +176,9 @@ createBlockObserver((b: HTMLDivElement) => {
       b.appendChild(updateButton);
     }
   }
+});
+
+window.roamAlphaAPI.ui.commandPalette.addCommand({
+  label: "Open Grain Feed",
+  callback: () => render({ parentUid: getCurrentPageUid() }),
 });
