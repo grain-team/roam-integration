@@ -44,6 +44,17 @@ type Recording = {
   start_datetime: string;
   thumbnail_url: string;
   checked: boolean;
+  highlights: {
+    created_datetime: string,
+    duration: number,
+    id: string,
+    recording_id: string,
+    text: string,
+    thumbnail_url: string,
+    timestamp: number,
+    transcript: string,
+    url: string
+  }[];
 };
 
 type Props = {
@@ -84,7 +95,7 @@ export const fetchEachRecording = (
         ids.map((id) =>
           axios
             .get<Recording>(
-              `https://grain.co/_/public-api/recordings/${id}`,
+              `https://grain.co/_/public-api/recordings/${id}?include_highlights=true`,
               opts
             )
             .then((r) => r.data)
@@ -98,7 +109,7 @@ export const fetchEachRecording = (
         children: [
           {
             text: "highlights",
-            children: /*r.highlights*/ [].map((h) => ({
+            children: r.highlights.map((h) => ({
               text: `${offsetToTimestamp(h.timestamp)} - ${h.text}`,
               children: h.url ? [{ text: `{{[[video]]:${h.url}}}` }] : [],
             })),

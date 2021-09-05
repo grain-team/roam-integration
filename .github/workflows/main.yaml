@@ -8,6 +8,9 @@ on:
 
 env:
   GRAIN_CLIENT_ID: ${{ secrets.GRAIN_CLIENT_ID }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: us-east-1
 
 jobs:
   deploy:
@@ -18,10 +21,7 @@ jobs:
         run: npm install
       - name: build
         run: npm run build 
-      - name: RoamJS Publish
-        uses: dvargas92495/roamjs-publish@0.2.1
-        with:
-          token: ${{ secrets.ROAMJS_DEVELOPER_TOKEN }}
-          source: build
-          path: grain
-          release_token: ${{ secrets.ROAMJS_RELEASE_TOKEN }}
+      - name: Publish
+        run: aws s3 cp build/main.js s3://roam-integration.grain.co/main.js
+      - name: Invalidate
+        run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
