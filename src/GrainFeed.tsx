@@ -45,15 +45,15 @@ type Recording = {
   thumbnail_url: string;
   checked: boolean;
   highlights: {
-    created_datetime: string,
-    duration: number,
-    id: string,
-    recording_id: string,
-    text: string,
-    thumbnail_url: string,
-    timestamp: number,
-    transcript: string,
-    url: string
+    created_datetime: string;
+    duration: number;
+    id: string;
+    recording_id: string;
+    text: string;
+    thumbnail_url: string;
+    timestamp: number;
+    transcript: string;
+    url: string;
   }[];
 };
 
@@ -105,16 +105,18 @@ export const fetchEachRecording = (
     .then((recordings) =>
       recordings.map((r) => ({
         uid: window.roamAlphaAPI.util.generateUID(),
-        text: `[[${r.title}]]`,
-        children: [
-          {
-            text: "highlights",
-            children: r.highlights.map((h) => ({
-              text: `${offsetToTimestamp(h.timestamp)} - ${h.text}`,
-              children: h.url ? [{ text: `{{[[video]]:${h.url}}}` }] : [],
-            })),
-          },
-        ],
+        text: `[[${r.title}]] (${new Date(
+          r.start_datetime
+        ).toLocaleString()} - ${new Date(r.end_datetime).toLocaleString()})`,
+        children: r.highlights.map((h) => ({
+          text: `${offsetToTimestamp(h.timestamp)} - ${
+            h.text
+          } (${offsetToTimestamp(h.duration)})`,
+          children: [
+            ...(h.transcript ? [{ text: h.transcript }] : []),
+            ...(h.url ? [{ text: `{{[[video]]:${h.url}}}` }] : []),
+          ],
+        })),
         id: r.id,
       }))
     );
