@@ -8,10 +8,7 @@ import {
   getBasicTreeByParentUid,
   getCurrentPageUid,
   getLinkedPageTitlesUnderUid,
-  getPageUidByPageTitle,
-  getShallowTreeByParentUid,
   getUids,
-  toConfig,
   toRoamDate,
   toRoamDateUid,
 } from "roam-client";

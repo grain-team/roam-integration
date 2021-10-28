@@ -6,19 +6,18 @@ import {
   Intent,
   Spinner,
 } from "@blueprintjs/core";
-import React, { useCallback, useEffect, useState } from "react";
-import ReactDOM from "react-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createBlock,
-  getBasicTreeByParentUid,
+  extractTag,
   getChildrenLengthByPageUid,
   getPageUidByPageTitle,
+  getRoamUrl,
   InputTextNode,
+  openBlockInSidebar,
 } from "roam-client";
 import { createOverlayRender, getOauth, toFlexRegex } from "roamjs-components";
 import {
-  CONFIG,
-  getIdsImported,
   getIdsImportedNode,
   getImportNode,
   getImportTree,
@@ -66,7 +65,7 @@ const getAccessToken = () => {
   if (oauth === "{}") {
     return Promise.reject(
       new Error(
-        "Need to log in with Grain to use Daily Grain Import! Head to roam/js/grain page to log in."
+        "Need to log in with Grain to use Daily Grain Import! Head to [[roam/js/grain]] page to log in."
       )
     );
   }
@@ -147,6 +146,41 @@ export const outputRecordings = (ids: string[], parentUid: string) =>
     );
   });
 
+const TAG_REGEX = /(\[\[[^[\]]+\]\])/;
+
+const RoamTag = ({
+  title,
+  onClick,
+}: {
+  title: string;
+  onClick: () => void;
+}) => {
+  const uid = useMemo(() => getPageUidByPageTitle(title), [title]);
+  return (
+    <span
+      data-link-title={title}
+      data-link-uid={uid}
+      onClick={(e) => {
+        if (e.shiftKey) {
+          openBlockInSidebar(uid);
+          e.preventDefault();
+        } else {
+          window.location.assign(getRoamUrl(uid));
+          // weird roam bug where it wipes out previous navigation
+          setTimeout(() => window.location.assign(getRoamUrl(uid)), 100);
+        }
+        onClick();
+      }}
+    >
+      <span className="rm-page-ref__brackets">[[</span>
+      <span tabIndex={-1} className="rm-page-ref rm-page-ref--link">
+        {title}
+      </span>
+      <span className="rm-page-ref__brackets">]]</span>
+    </span>
+  );
+};
+
 const GrainFeed = ({
   parentUid,
   onClose,
@@ -177,7 +211,9 @@ const GrainFeed = ({
       })
       .catch((r) => setError(r.response?.data || r.message))
       .finally(() => setLoading(false));
-  }, [setRecordings]);
+    window.addEventListener("hashchange", onClose);
+    return () => window.removeEventListener("hashchange", onClose);
+  }, [setRecordings, onClose]);
   const onClick = useCallback(() => {
     setLoading(true);
     outputRecordings(
@@ -197,7 +233,17 @@ const GrainFeed = ({
         {loading ? (
           <Spinner />
         ) : error ? (
-          <span style={{ color: "darkred" }}>{error}</span>
+          <span style={{ color: "darkred" }}>
+            {error
+              .split(new RegExp(TAG_REGEX, "g"))
+              .map((e, i) =>
+                TAG_REGEX.test(e) ? (
+                  <RoamTag key={i} title={extractTag(e)} onClick={onClose} />
+                ) : (
+                  <React.Fragment key={i}>{e}</React.Fragment>
+                )
+              )}
+          </span>
         ) : (
           <>
             <div
@@ -247,23 +293,27 @@ const GrainFeed = ({
             className={Classes.DIALOG_FOOTER_ACTIONS}
             style={{ justifyContent: "space-between", alignItems: "baseline" }}
           >
-            <Checkbox
-              disabled={loading}
-              label={"Check All"}
-              style={{ marginBottom: 0 }}
-              checked={
-                !!recordings.length &&
-                recordings.every(({ checked }) => checked)
-              }
-              onChange={(e) =>
-                setRecordings(
-                  recordings.map((r) => ({
-                    ...r,
-                    checked: (e.target as HTMLInputElement).checked,
-                  }))
-                )
-              }
-            />
+            <div>
+              {!loading && !error && (
+                <Checkbox
+                  disabled={loading}
+                  label={"Check All"}
+                  style={{ marginBottom: 0 }}
+                  checked={
+                    !!recordings.length &&
+                    recordings.every(({ checked }) => checked)
+                  }
+                  onChange={(e) =>
+                    setRecordings(
+                      recordings.map((r) => ({
+                        ...r,
+                        checked: (e.target as HTMLInputElement).checked,
+                      }))
+                    )
+                  }
+                />
+              )}
+            </div>
             <Button
               onClick={onClick}
               intent={Intent.PRIMARY}
