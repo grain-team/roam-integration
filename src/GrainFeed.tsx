@@ -18,6 +18,7 @@ import {
 } from "roam-client";
 import { createOverlayRender, getOauth, toFlexRegex } from "roamjs-components";
 import {
+  getIdsImported,
   getIdsImportedNode,
   getImportNode,
   getImportTree,
@@ -56,9 +57,12 @@ type Recording = {
   }[];
 };
 
+type Formats = { format: InputTextNode; highlightFormat: InputTextNode };
+
 type Props = {
   parentUid: string;
-};
+  idsImported: Record<string, string>;
+} & Formats;
 
 const getAccessToken = () => {
   const oauth = getOauth("grain");
@@ -86,7 +90,8 @@ export const getRecordings = () =>
   );
 
 export const fetchEachRecording = (
-  ids: string[]
+  ids: string[],
+  formats: Formats
 ): Promise<(InputTextNode & { id: string })[]> =>
   getAccessToken()
     .then((opts) =>
@@ -101,27 +106,61 @@ export const fetchEachRecording = (
         )
       )
     )
-    .then((recordings) =>
-      recordings.map((r) => ({
-        uid: window.roamAlphaAPI.util.generateUID(),
-        text: `[[${r.title}]] (${new Date(
-          r.start_datetime
-        ).toLocaleString()} - ${new Date(r.end_datetime).toLocaleString()})`,
-        children: r.highlights.map((h) => ({
-          text: `${offsetToTimestamp(h.timestamp)} - ${
-            h.text
-          } (${offsetToTimestamp(h.duration)})`,
-          children: [
-            ...(h.transcript ? [{ text: h.transcript }] : []),
-            ...(h.url ? [{ text: `{{[[video]]:${h.url}}}` }] : []),
-          ],
-        })),
+    .then((recordings) => {
+      const interpolateHighlight = (
+        n: InputTextNode,
+        h: Recording["highlights"][number]
+      ): InputTextNode => {
+        return {
+          ...n,
+          uid: window.roamAlphaAPI.util.generateUID(),
+          text: n.text
+            .replace(/{text}/g, h.text)
+            .replace(/{timestamp}/g, offsetToTimestamp(h.timestamp))
+            .replace(/{duration}/g, offsetToTimestamp(h.duration))
+            .replace(/{transcript}/g, h.transcript || "")
+            .replace(/{video}/g, h.url ? `{{[[video]]:${h.url}}}` : ""),
+          children: (n.children || []).map((c) => interpolateHighlight(c, h)),
+        };
+      };
+      const interpolateFormat = (
+        n: InputTextNode,
+        r: Recording
+      ): InputTextNode[] => {
+        const siblings = /{highlights}/.test(n.text)
+          ? r.highlights.map((h) =>
+              interpolateHighlight(formats.highlightFormat, h)
+            )
+          : [];
+        const text = n.text
+          .replace(/{title}/g, r.title)
+          .replace(/{start}/g, new Date(r.start_datetime).toLocaleString())
+          .replace(/{end}/g, new Date(r.end_datetime).toLocaleString())
+          .replace(/{highlights}/g, "");
+        return [
+          {
+            ...n,
+            uid: window.roamAlphaAPI.util.generateUID(),
+            text,
+            children: (n.children || []).flatMap((c) =>
+              interpolateFormat(c, r)
+            ),
+          },
+          ...siblings,
+        ].filter((n) => !!n.text || !!n.children.length);
+      };
+      return recordings.map((r) => ({
+        ...interpolateFormat(formats.format, r)[0],
         id: r.id,
-      }))
-    );
+      }));
+    });
 
-export const outputRecordings = (ids: string[], parentUid: string) =>
-  fetchEachRecording(ids).then((rs) => {
+export const outputRecordings = (
+  ids: string[],
+  parentUid: string,
+  formats: Formats
+) =>
+  fetchEachRecording(ids, formats).then((rs) => {
     createBlock({
       parentUid,
       order: getChildrenLengthByPageUid(parentUid),
@@ -183,9 +222,15 @@ const RoamTag = ({
 
 const GrainFeed = ({
   parentUid,
+  idsImported,
   onClose,
+  ...formats
 }: Props & { onClose: () => void }): React.ReactElement => {
   const [recordings, setRecordings] = useState<Recording[]>([]);
+  const recordingIds = useMemo(
+    () => new Set(Object.values(idsImported || getIdsImported())),
+    [idsImported]
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const onCancel = useCallback(() => {
@@ -207,20 +252,24 @@ const GrainFeed = ({
   useEffect(() => {
     getRecordings()
       .then((r) => {
-        setRecordings(r.data.recordings.map((t) => ({ ...t, checked: false })));
+        const recs = r.data.recordings
+          .filter((r) => !recordingIds.has(r.id))
+          .map((t) => ({ ...t, checked: false }));
+        setRecordings(recs);
       })
       .catch((r) => setError(r.response?.data || r.message))
       .finally(() => setLoading(false));
     window.addEventListener("hashchange", onClose);
     return () => window.removeEventListener("hashchange", onClose);
-  }, [setRecordings, onClose]);
+  }, [setRecordings, onClose, recordingIds]);
   const onClick = useCallback(() => {
     setLoading(true);
     outputRecordings(
       recordings.filter((r) => r.checked).map((r) => r.id),
-      parentUid
+      parentUid,
+      formats
     ).finally(onClose);
-  }, [recordings, onClose, parentUid]);
+  }, [recordings, onClose, parentUid, formats]);
   return (
     <Dialog
       isOpen={true}
@@ -246,14 +295,25 @@ const GrainFeed = ({
           </span>
         ) : (
           <>
-            <div
-              style={{
-                maxHeight: 760,
-                overflowY: "scroll",
-                paddingBottom: 16,
-                paddingLeft: 4,
-              }}
-            >
+            <div className={"roamjs-grain-feed-body"}>
+              {!!recordings.length && (
+                <Checkbox
+                  disabled={loading}
+                  label={"Check All"}
+                  checked={
+                    !!recordings.length &&
+                    recordings.every(({ checked }) => checked)
+                  }
+                  onChange={(e) =>
+                    setRecordings(
+                      recordings.map((r) => ({
+                        ...r,
+                        checked: (e.target as HTMLInputElement).checked,
+                      }))
+                    )
+                  }
+                />
+              )}
               {recordings.map((recording) => (
                 <Checkbox
                   key={recording.id}
@@ -277,6 +337,7 @@ const GrainFeed = ({
                       verticalAlign: "middle",
                       width: "100%",
                       justifyContent: "space-between",
+                      fontWeight: 400,
                     }}
                   >
                     <span>{recording.title}</span>
@@ -284,36 +345,12 @@ const GrainFeed = ({
                   </div>
                 </Checkbox>
               ))}
-              {!recordings.length && <span>No recordings available.</span>}
+              {!recordings.length && <span>No new recordings available.</span>}
             </div>
           </>
         )}
         <div className={Classes.DIALOG_FOOTER}>
-          <div
-            className={Classes.DIALOG_FOOTER_ACTIONS}
-            style={{ justifyContent: "space-between", alignItems: "baseline" }}
-          >
-            <div>
-              {!loading && !error && (
-                <Checkbox
-                  disabled={loading}
-                  label={"Check All"}
-                  style={{ marginBottom: 0 }}
-                  checked={
-                    !!recordings.length &&
-                    recordings.every(({ checked }) => checked)
-                  }
-                  onChange={(e) =>
-                    setRecordings(
-                      recordings.map((r) => ({
-                        ...r,
-                        checked: (e.target as HTMLInputElement).checked,
-                      }))
-                    )
-                  }
-                />
-              )}
-            </div>
+          <div className={Classes.DIALOG_FOOTER_ACTIONS}>
             <Button
               onClick={onClick}
               intent={Intent.PRIMARY}
