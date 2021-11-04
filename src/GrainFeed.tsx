@@ -120,7 +120,9 @@ export const fetchEachRecording = (
             .replace(/{duration}/g, offsetToTimestamp(h.duration))
             .replace(/{transcript}/g, h.transcript || "")
             .replace(/{video}/g, h.url ? `{{[[video]]:${h.url}}}` : ""),
-          children: (n.children || []).map((c) => interpolateHighlight(c, h)),
+          children: (n.children || [])
+            .map((c) => interpolateHighlight(c, h))
+            .filter((n) => !!n.text || !!n.children.length),
         };
       };
       const interpolateFormat = (
