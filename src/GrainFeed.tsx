@@ -5,6 +5,8 @@ import {
   Dialog,
   Intent,
   Spinner,
+  Tab,
+  Tabs,
 } from "@blueprintjs/core";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -25,6 +27,8 @@ import {
   IMPORT_LABEL,
 } from "./util";
 import axios from "axios";
+import dateFnsFormat from "date-fns/format";
+import differenceInMilliseconds from "date-fns/differenceInMilliseconds";
 
 const offsetToTimestamp = (offset?: number) => {
   if (!offset) {
@@ -34,6 +38,11 @@ const offsetToTimestamp = (offset?: number) => {
   const seconds = totalSeconds % 60;
   const minutes = Math.floor(totalSeconds / 60);
   return `${`${minutes}`.padStart(2, "0")}:${`${seconds}`.padStart(2, "0")}`;
+};
+
+const formatDate = (inputDate: string, format?: string) => {
+  const d = new Date(inputDate);
+  return format ? dateFnsFormat(d, format) : d.toLocaleString();
 };
 
 type Recording = {
@@ -55,9 +64,17 @@ type Recording = {
     transcript: string;
     url: string;
   }[];
+  participants: {
+    email: string;
+    name: string;
+  }[];
 };
 
-type Formats = { format: InputTextNode; highlightFormat: InputTextNode };
+type Formats = {
+  recordingFormat: InputTextNode;
+  highlightFormat: InputTextNode;
+  participantFormat: InputTextNode;
+};
 
 type Props = {
   parentUid: string;
@@ -81,10 +98,12 @@ const getAccessToken = () => {
   });
 };
 
-export const getRecordings = () =>
+export const getRecordings = (type?: "attended" | "hosted" | "all") =>
   getAccessToken().then((opts) =>
     axios.get<{ recordings: Omit<Recording, "checked">[] }>(
-      `https://grain.co/_/public-api/recordings`,
+      `https://grain.co/_/public-api/recordings${
+        type !== "all" ? `?attendance=${type}` : ""
+      }`,
       opts
     )
   );
@@ -99,7 +118,7 @@ export const fetchEachRecording = (
         ids.map((id) =>
           axios
             .get<Recording>(
-              `https://grain.co/_/public-api/recordings/${id}?include_highlights=true`,
+              `https://grain.co/_/public-api/recordings/${id}?include_highlights=true&include_participants=true`,
               opts
             )
             .then((r) => r.data)
@@ -107,6 +126,21 @@ export const fetchEachRecording = (
       )
     )
     .then((recordings) => {
+      const interpolateParticipant = (
+        n: InputTextNode,
+        p: Recording["participants"][number]
+      ): InputTextNode => {
+        return {
+          ...n,
+          uid: window.roamAlphaAPI.util.generateUID(),
+          text: n.text
+            .replace(/{name}/g, p.name || "")
+            .replace(/{email}/g, p.email || ""),
+          children: (n.children || [])
+            .map((c) => interpolateParticipant(c, p))
+            .filter((n) => !!n.text || !!n.children.length),
+        };
+      };
       const interpolateHighlight = (
         n: InputTextNode,
         h: Recording["highlights"][number]
@@ -116,6 +150,7 @@ export const fetchEachRecording = (
           uid: window.roamAlphaAPI.util.generateUID(),
           text: n.text
             .replace(/{text}/g, h.text)
+            .replace(/{url}/g, h.url)
             .replace(/{timestamp}/g, offsetToTimestamp(h.timestamp))
             .replace(/{duration}/g, offsetToTimestamp(h.duration))
             .replace(/{transcript}/g, h.transcript || "")
@@ -129,16 +164,39 @@ export const fetchEachRecording = (
         n: InputTextNode,
         r: Recording
       ): InputTextNode[] => {
-        const siblings = /{highlights}/.test(n.text)
-          ? r.highlights.map((h) =>
-              interpolateHighlight(formats.highlightFormat, h)
-            )
-          : [];
+        const siblings = [
+          ...(/{highlights}/.test(n.text)
+            ? r.highlights.map((h) =>
+                interpolateHighlight(formats.highlightFormat, h)
+              )
+            : []),
+          ...(/{participants}/.test(n.text)
+            ? r.participants.map((p) =>
+                interpolateParticipant(formats.participantFormat, p)
+              )
+            : []),
+        ];
         const text = n.text
           .replace(/{title}/g, r.title)
-          .replace(/{start}/g, new Date(r.start_datetime).toLocaleString())
-          .replace(/{end}/g, new Date(r.end_datetime).toLocaleString())
-          .replace(/{highlights}/g, "");
+          .replace(/{start(?::([^}]+))?}/g, (_, format) =>
+            formatDate(r.start_datetime, format)
+          )
+          .replace(/{end(?::([^}]+))?}/g, (_, format) =>
+            formatDate(r.end_datetime, format)
+          )
+          .replace(
+            /{duration}/,
+            offsetToTimestamp(
+              differenceInMilliseconds(
+                new Date(r.end_datetime),
+                new Date(r.start_datetime)
+              )
+            )
+          )
+          .replace(/{url}/g, r.url)
+          .replace(/{highlight_count}/g, `${r.highlights.length}`)
+          .replace(/{highlights}/g, "")
+          .replace(/{participants}/g, "");
         return [
           {
             ...n,
@@ -152,7 +210,7 @@ export const fetchEachRecording = (
         ].filter((n) => !!n.text || !!n.children.length);
       };
       return recordings.map((r) => ({
-        ...interpolateFormat(formats.format, r)[0],
+        ...interpolateFormat(formats.recordingFormat, r)[0],
         id: r.id,
       }));
     });
@@ -222,6 +280,13 @@ const RoamTag = ({
   );
 };
 
+type AttendanceType = Parameters<typeof getRecordings>[0];
+const TAB_IDS = {
+  all: "All Recordings",
+  attended: "Recordings Attended",
+  hosted: "Recordings Hosted",
+} as const;
+
 const GrainFeed = ({
   parentUid,
   idsImported,
@@ -233,6 +298,8 @@ const GrainFeed = ({
     () => new Set(Object.values(idsImported || getIdsImported())),
     [idsImported]
   );
+  const [attendanceType, setAttendanceType] =
+    useState<AttendanceType>("attended");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const onCancel = useCallback(() => {
@@ -252,7 +319,9 @@ const GrainFeed = ({
     onClose();
   }, [onClose, parentUid]);
   useEffect(() => {
-    getRecordings()
+    setLoading(true);
+    setError("");
+    getRecordings(attendanceType)
       .then((r) => {
         const recs = r.data.recordings
           .filter((r) => !recordingIds.has(r.id))
@@ -263,7 +332,7 @@ const GrainFeed = ({
       .finally(() => setLoading(false));
     window.addEventListener("hashchange", onClose);
     return () => window.removeEventListener("hashchange", onClose);
-  }, [setRecordings, onClose, recordingIds]);
+  }, [setRecordings, onClose, recordingIds, attendanceType]);
   const onClick = useCallback(() => {
     setLoading(true);
     outputRecordings(
@@ -272,6 +341,7 @@ const GrainFeed = ({
       formats
     ).finally(onClose);
   }, [recordings, onClose, parentUid, formats]);
+
   return (
     <Dialog
       isOpen={true}
@@ -280,7 +350,21 @@ const GrainFeed = ({
       canEscapeKeyClose
       title={`Import Grain Recording`}
     >
-      <div className={Classes.DIALOG_BODY}>
+      <div className={`${Classes.DIALOG_BODY} roamjs-grain-import-body`}>
+        <Tabs
+          selectedTabId={TAB_IDS[attendanceType]}
+          onChange={(t) =>
+            setAttendanceType(
+              Object.keys(TAB_IDS)
+                .map((k) => k as keyof typeof TAB_IDS)
+                .find((k) => TAB_IDS[k] === t)
+            )
+          }
+        >
+          <Tab id={TAB_IDS["attended"]} title={TAB_IDS["attended"]} />
+          <Tab id={TAB_IDS["hosted"]} title={TAB_IDS["hosted"]} />
+          <Tab id={TAB_IDS["all"]} title={TAB_IDS["all"]} />
+        </Tabs>
         {loading ? (
           <Spinner />
         ) : error ? (

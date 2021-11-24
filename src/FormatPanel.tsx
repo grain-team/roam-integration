@@ -2,14 +2,22 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getFirstChildUidByBlockUid, InputTextNode } from "roam-client";
 import { createBlock } from "roam-client/lib/writes";
 
-export const DEFAULT_FORMAT = {
-  text: "[[{title}]] ({start}) - ({end})",
-  children: [{ text: "{highlights}" }],
+export const DEFAULT_RECORDING_FORMAT = {
+  text: "[[{title}]] [->]({url}) ({start:dd/MM/yyyy} {start:hh:mm a} - {end:hh:mm a})",
+  children: [
+    { text: "Participants", children: [{ text: "{participants}" }] },
+    { text: "Highlights", children: [{ text: "{highlights}" }] },
+  ],
 };
 
 export const DEFAULT_HIGHLIGHT_FORMAT = {
-  text: "{timestamp} {text} - ({duration})",
+  text: "{timestamp} [{text}]({url}) - ({duration})",
   children: [{ text: "{transcript}" }, { text: "{video}" }],
+};
+
+export const DEFAULT_PARTICIPANT_FORMAT = {
+  text: "[[{name}]]",
+  children: [{ text: "({email})" }],
 };
 
 const FormatPanel = ({

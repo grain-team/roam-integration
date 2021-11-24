@@ -8,6 +8,7 @@ import {
   getBasicTreeByParentUid,
   getCurrentPageUid,
   getLinkedPageTitlesUnderUid,
+  getShallowTreeByParentUid,
   getUids,
   toRoamDate,
   toRoamDateUid,
@@ -26,8 +27,9 @@ import {
 } from "./GrainFeed";
 import { render as renderLoadingAlert } from "./LoadingAlert";
 import FormatPanel, {
-  DEFAULT_FORMAT,
+  DEFAULT_RECORDING_FORMAT,
   DEFAULT_HIGHLIGHT_FORMAT,
+  DEFAULT_PARTICIPANT_FORMAT,
 } from "./FormatPanel";
 import {
   CONFIG,
@@ -35,6 +37,7 @@ import {
   IMPORT_LABEL,
   getImportTree,
   getImportNode,
+  getIdsImportedNode,
 } from "./util";
 import axios from "axios";
 import pkceChallenge from "pkce-challenge";
@@ -70,8 +73,35 @@ button.bp3-button.bp3-intent-primary:hover {
   background-color: ${brand};
 }
 
+.roamjs-grain-import-body .bp3-tab[aria-selected="true"] {
+  background-color: ${brand} !important;
+  box-shadow: 0px 2px 6px rgba(0, 0, 0, 0.16) !important;
+  color: #FFFFFF;
+}
+
+.roamjs-grain-import-body .bp3-tab:not([aria-disabled="true"]):not([aria-selected="true"]):hover {
+  color: ${brand};
+}
+
+.roamjs-grain-import-body .bp3-tab {
+  padding: 0 8px;
+  height: 32px;
+  border-radius: 16px;
+  color: #545454;
+  text-align: center;
+}
+
+.roamjs-grain-import-body .bp3-tab-indicator-wrapper {
+  display: none;
+}
+
+.roamjs-grain-import-body .bp3-tabs {
+  margin-bottom: 24px;
+}
+
 .roamjs-grain-feed-body {
   max-height: 380px;
+  min-height: 100px;
   overflow-y: scroll;
   padding: 16px;
   border: 1px solid #333333;
@@ -157,11 +187,11 @@ createConfigObserver({
         id: "import",
         fields: [
           {
-            title: "format",
+            title: "recording format",
             type: "custom",
             description:
               "Specify the block format by which recordings are imported into your graph",
-            defaultValue: [DEFAULT_FORMAT],
+            defaultValue: [DEFAULT_RECORDING_FORMAT],
             options: {
               component: FormatPanel,
             },
@@ -172,6 +202,16 @@ createConfigObserver({
             description:
               "Specify the block format by which highlights are imported into your graph",
             defaultValue: [DEFAULT_HIGHLIGHT_FORMAT],
+            options: {
+              component: FormatPanel,
+            },
+          },
+          {
+            title: "participant format",
+            type: "custom",
+            description:
+              "Specify the block format by which participants are imported into your graph",
+            defaultValue: [DEFAULT_PARTICIPANT_FORMAT],
             options: {
               component: FormatPanel,
             },
@@ -189,14 +229,17 @@ createConfigObserver({
 });
 
 const getImportSettings = (importTree = getImportTree()) => {
-  const format =
-    getSubTree({ key: "format", tree: importTree }).children[0] ||
-    DEFAULT_FORMAT;
+  const recordingFormat =
+    getSubTree({ key: "recording format", tree: importTree }).children[0] ||
+    DEFAULT_RECORDING_FORMAT;
   const highlightFormat =
     getSubTree({ key: "highlight format", tree: importTree }).children[0] ||
     DEFAULT_HIGHLIGHT_FORMAT;
+  const participantFormat =
+    getSubTree({ key: "participant format", tree: importTree }).children[0] ||
+    DEFAULT_PARTICIPANT_FORMAT;
   const idsImported = getIdsImported(importTree);
-  return { idsImported, format, highlightFormat };
+  return { idsImported, recordingFormat, highlightFormat, participantFormat };
 };
 
 const today = new Date();
@@ -239,12 +282,26 @@ createBlockObserver((b: HTMLDivElement) => {
     if (isImport && hasChildren) {
       b.setAttribute("data-grain-refresh-import", "true");
       const updateButton = createIconButton("refresh");
-      updateButton.style.float = "right";
-      updateButton.style.display = "none";
+      const deleteButton = createIconButton("delete");
+      const buttonHolder = document.createElement("span");
+      buttonHolder.appendChild(updateButton);
+      buttonHolder.appendChild(deleteButton);
       b.onmouseenter = b.onmousemove = () =>
-        (updateButton.style.display = "flex");
-      b.onmouseleave = () => (updateButton.style.display = "none");
-      updateButton.onmousedown = (e) => e.stopPropagation();
+        (buttonHolder.style.display = "flex");
+      b.onmouseleave = () => (buttonHolder.style.display = "none");
+      buttonHolder.style.float = "right";
+      buttonHolder.style.display = "none";
+      updateButton.style.width =
+        updateButton.style.height =
+        updateButton.style.minHeight =
+        updateButton.style.minWidth =
+        deleteButton.style.width =
+        deleteButton.style.height =
+        deleteButton.style.minHeight =
+        deleteButton.style.minWidth =
+          "16px";
+      updateButton.style.margin = deleteButton.style.margin = "0 8px";
+      buttonHolder.onmousedown = (e) => e.stopPropagation();
       updateButton.onclick = () => {
         const { blockUid } = getUids(b);
         renderLoadingAlert({
@@ -267,7 +324,19 @@ createBlockObserver((b: HTMLDivElement) => {
           },
         });
       };
-      b.appendChild(updateButton);
+      deleteButton.onclick = () => {
+        const { blockUid } = getUids(b);
+        const idsImportedNode = getIdsImportedNode();
+        const idsImported = Object.fromEntries(
+          idsImportedNode.children.map((t) => [t.text, t.uid])
+        );
+        getShallowTreeByParentUid(blockUid).forEach(({ uid }) => {
+          deleteBlock(uid);
+          deleteBlock(idsImported[uid] || "");
+        });
+        deleteBlock(blockUid);
+      };
+      b.appendChild(buttonHolder);
     }
   }
 });
