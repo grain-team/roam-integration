@@ -18,7 +18,12 @@ import {
   InputTextNode,
   openBlockInSidebar,
 } from "roam-client";
-import { createOverlayRender, getOauth, toFlexRegex } from "roamjs-components";
+import {
+  createOverlayRender,
+  getOauth,
+  toFlexRegex,
+  renderToast,
+} from "roamjs-components";
 import {
   getIdsImported,
   getIdsImportedNode,
@@ -339,7 +344,14 @@ const GrainFeed = ({
       recordings.filter((r) => r.checked).map((r) => r.id),
       parentUid,
       formats
-    ).finally(onClose);
+    )
+      .catch((e) =>
+        renderToast({
+          id: "grain-fetch-error",
+          content: `Failed to output recordings: ${e.message}`,
+        })
+      )
+      .finally(onClose);
   }, [recordings, onClose, parentUid, formats]);
 
   return (
