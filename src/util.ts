@@ -1,12 +1,9 @@
-import {
-  getBasicTreeByParentUid,
-  getPageUidByPageTitle,
-  toConfig,
-} from "roam-client";
-import { toFlexRegex } from "roamjs-components";
+import getBasicTreeByParentUid from "roamjs-components/queries/getBasicTreeByParentUid";
+import getPageUidByPageTitle from "roamjs-components/queries/getPageUidByPageTitle";
+import toFlexRegex from "roamjs-components/util/toFlexRegex";
 
 export const IMPORT_LABEL = "Grain Recordings";
-export const CONFIG = toConfig("grain");
+export const CONFIG = "roam/js/grain";
 
 export const getImportNode = () =>
   getBasicTreeByParentUid(getPageUidByPageTitle(CONFIG)).find((t) =>

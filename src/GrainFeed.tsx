@@ -9,21 +9,16 @@ import {
   Tabs,
 } from "@blueprintjs/core";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  createBlock,
-  extractTag,
-  getChildrenLengthByPageUid,
-  getPageUidByPageTitle,
-  getRoamUrl,
-  InputTextNode,
-  openBlockInSidebar,
-} from "roam-client";
-import {
-  createOverlayRender,
-  getOauth,
-  toFlexRegex,
-  renderToast,
-} from "roamjs-components";
+import createBlock from "roamjs-components/writes/createBlock";
+import extractTag from "roamjs-components/util/extractTag";
+import getChildrenLengthByPageUid from "roamjs-components/queries/getChildrenLengthByPageUid";
+import getPageUidByPageTitle from "roamjs-components/queries/getPageUidByPageTitle";
+import getRoamUrl from "roamjs-components/dom/getRoamUrl";
+import { InputTextNode } from "roamjs-components/types/native";
+import openBlockInSidebar from "roamjs-components/writes/openBlockInSidebar";
+import createOverlayRender from "roamjs-components/util/createOverlayRender";
+import getOauth from "roamjs-components/util/getOauth";
+import { render as renderToast } from "roamjs-components/components/Toast";
 import {
   getIdsImported,
   getIdsImportedNode,
@@ -225,7 +220,7 @@ export const outputRecordings = (
   parentUid: string,
   formats: Formats
 ) =>
-  fetchEachRecording(ids, formats).then((rs) => {
+  fetchEachRecording(ids, formats).then(async (rs) => {
     createBlock({
       parentUid,
       order: getChildrenLengthByPageUid(parentUid),
@@ -237,11 +232,11 @@ export const outputRecordings = (
     const importNode = getImportNode();
     const idUid =
       getIdsImportedNode(getImportTree(importNode))?.uid ||
-      createBlock({
+      (await createBlock({
         node: { text: "ids" },
         parentUid: importNode?.uid,
         order: 1,
-      });
+      }));
     rs.forEach(({ uid, id }) =>
       createBlock({
         node: { text: uid, children: [{ text: id }] },

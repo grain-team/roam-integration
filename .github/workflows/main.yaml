@@ -22,6 +22,4 @@ jobs:
       - name: build
         run: npm run build 
       - name: Publish
-        run: aws s3 cp build/main.js s3://production-grain-roam/main.js
-      - name: Invalidate
-        run: aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} --paths "/*"
+        run: aws s3 cp extension.js s3://production-grain-roam/extension.js

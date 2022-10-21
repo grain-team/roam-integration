@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { getFirstChildUidByBlockUid, InputTextNode } from "roam-client";
-import { createBlock } from "roam-client/lib/writes";
+import { InputTextNode } from "roamjs-components/types/native";
+import createBlock from "roamjs-components/writes/createBlock";
+import getFirstChildUidByBlockUid from "roamjs-components/queries/getFirstChildUidByBlockUid";
 
 export const DEFAULT_RECORDING_FORMAT = {
   text: "[[{title}]] [->]({url}) ({start:dd/MM/yyyy} {start:hh:mm a} - {end:hh:mm a})",
@@ -31,22 +32,27 @@ const FormatPanel = ({
   title: string;
   defaultValue?: [InputTextNode];
 }) => {
-  const formatUid = useMemo(
-    () =>
-      initialUid ||
-      createBlock({ node: { text: title, children: [] }, parentUid }),
-    [initialUid, parentUid, title]
-  );
+  const formatUid = useMemo(() => {
+    if (initialUid) return initialUid;
+    const nodeUid = window.roamAlphaAPI.util.generateUID();
+    createBlock({
+      node: { text: title, children: [], uid: nodeUid },
+      parentUid,
+    });
+    return nodeUid;
+  }, [initialUid, parentUid, title]);
   const containerRef = useRef(null);
   useEffect(() => {
     if (containerRef.current) {
-      const uid =
+      Promise.resolve(
         getFirstChildUidByBlockUid(formatUid) ||
-        createBlock({ node: defaultValue[0], parentUid: formatUid });
-      window.roamAlphaAPI.ui.components.renderBlock({
-        uid,
-        el: containerRef.current,
-      });
+          createBlock({ node: defaultValue[0], parentUid: formatUid })
+      ).then((uid) =>
+        window.roamAlphaAPI.ui.components.renderBlock({
+          uid,
+          el: containerRef.current,
+        })
+      );
     }
   }, [formatUid, containerRef, defaultValue]);
   return (

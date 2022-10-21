@@ -1,6 +1,6 @@
 import { Alert, Spinner, SpinnerSize } from "@blueprintjs/core";
 import React, { useEffect } from "react";
-import { createOverlayRender } from "roamjs-components";
+import createOverlayRender from "roamjs-components/util/createOverlayRender";
 
 type Props = {
   operation: () => Promise<unknown>;
