@@ -10,7 +10,7 @@
   },
   "license": "MIT",
   "devDependencies": {
-    "roamjs-scripts": "^0.24.0"
+    "roamjs-scripts": "^0.24.1"
   },
   "dependencies": {
     "pkce-challenge": "^2.2.0",
